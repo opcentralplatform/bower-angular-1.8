@@ -11162,6 +11162,11 @@ function $CompileProvider($provide, $$sanitizeUriProvider) {
       } else if (nodeName === 'a' && (attrNormalizedName === 'href' ||
                                  attrNormalizedName === 'ngHref')) {
         return $sce.URL;
+      // CVE-2025-0716 FIX: Apply image source sanitization for SVG <image> elements
+      // when using href or ngHref attributes (not just xlinkHref)
+      } else if (nodeName === 'image' && (attrNormalizedName === 'href' ||
+                                          attrNormalizedName === 'ngHref')) {
+        return $sce.MEDIA_URL;
       }
     }
 
