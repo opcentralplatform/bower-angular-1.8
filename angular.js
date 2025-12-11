@@ -2725,6 +2725,7 @@ function toDebugString(obj, maxDepth) {
   htmlAnchorDirective,
   inputDirective,
   hiddenInputBrowserCacheDirective,
+  textareaBrowserCacheDirective,
   formDirective,
   scriptDirective,
   selectDirective,
@@ -2940,7 +2941,8 @@ function publishExternalAPI(angular) {
         }).
         directive({
           ngInclude: ngIncludeFillContentDirective,
-          input: hiddenInputBrowserCacheDirective
+          input: hiddenInputBrowserCacheDirective,
+          textarea: textareaBrowserCacheDirective
         }).
         directive(ngAttributeAliasDirectives).
         directive(ngEventDirectives);
@@ -27722,6 +27724,62 @@ var hiddenInputBrowserCacheDirective = function() {
     }
   };
 };
+
+// CVE-2022-25869 FIX: Prevent XSS via IE textarea page caching
+// Internet Explorer has a bug where it caches textarea content and can execute
+// scripts when restoring from cache. This directive sanitizes textarea content
+// by encoding HTML entities to prevent script execution.
+var textareaBrowserCacheDirective = ['$window', function($window) {
+  // Only apply fix for IE
+  var isIE = $window.document.documentMode;
+  
+  // HTML entity encoding function to prevent XSS
+  function encodeHtmlEntities(text) {
+    if (!text || typeof text !== 'string') return text;
+    return text
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  return {
+    restrict: 'E',
+    priority: 200,
+    require: '?ngModel',
+    link: function(scope, element, attr, ngModel) {
+      if (!isIE) return; // Only apply for IE
+      
+      var node = element[0];
+      
+      // Override the default value property for textareas in IE
+      // to encode content when setting and decode when getting
+      if (Object.defineProperty) {
+        var originalValue = '';
+        
+        try {
+          Object.defineProperty(node, 'value', {
+            configurable: true,
+            enumerable: false,
+            get: function() {
+              return originalValue;
+            },
+            set: function(val) {
+              originalValue = val;
+              // Store encoded version in the actual textarea to prevent XSS on cache restore
+              node.textContent = encodeHtmlEntities(val);
+            }
+          });
+        } catch (e) {
+          // If defineProperty fails, fall back to event-based sanitization
+          element.on('change blur', function() {
+            if (node.value !== node.value.replace(/<script/gi, '&lt;script')) {
+              node.value = node.value.replace(/<script/gi, '&lt;script');
+            }
+          });
+        }
+      }
+    }
+  };
+}];
 
 
 
