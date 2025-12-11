@@ -9417,36 +9417,88 @@ function $CompileProvider($provide, $$sanitizeUriProvider) {
       // `ng-bind-html` directive.
 
       var result = '';
-
-      // first check if there are spaces because it's not the same pattern
       var trimmedSrcset = trim(value);
-      //                (   999x   ,|   999w   ,|   ,|,   )
-      var srcPattern = /(\s+\d+x\s*,|\s+\d+w\s*,|\s+,|,\s+)/;
-      var pattern = /\s/.test(trimmedSrcset) ? srcPattern : /(,)/;
 
-      // split srcset into tuple of uri and descriptor except for the last item
-      var rawUris = trimmedSrcset.split(pattern);
+      // CVE-2024-8372 FIX: Improved srcset parsing to handle all descriptor formats
+      // Per HTML spec, srcset entries are separated by commas, and each entry is:
+      // <url> [<width-descriptor>|<pixel-density-descriptor>]
+      // We need to be careful with commas inside data: URLs
 
-      // for each tuples
-      var nbrUrisWith2parts = Math.floor(rawUris.length / 2);
-      for (var i = 0; i < nbrUrisWith2parts; i++) {
-        var innerIdx = i * 2;
-        // sanitize the uri
-        result += $sce.getTrustedMediaUrl(trim(rawUris[innerIdx]));
-        // add the descriptor
-        result += ' ' + trim(rawUris[innerIdx + 1]);
+      // Pattern to match srcset entries: URL followed by optional whitespace and descriptor
+      // The descriptor can be anything (not just \d+[wx]) to handle malformed input securely
+      // Entries are separated by commas, but we need to handle commas in data: URLs
+      
+      var sanitizedEntries = [];
+      var remaining = trimmedSrcset;
+      
+      while (remaining) {
+        remaining = trim(remaining);
+        if (!remaining) break;
+        
+        var url, descriptor = '';
+        
+        // Check if this is a data: URL (which may contain commas)
+        if (/^data:/i.test(remaining)) {
+          // For data: URLs, find the end by looking for comma followed by space and another URL or descriptor
+          // Data URLs end at: ", http" or ", /" or ", data:" or at comma followed by space+descriptor pattern
+          var dataUrlMatch = remaining.match(/^(data:[^,]*,[^\s]*?)(\s+[^\s,]+)?\s*(?:,\s*|$)/i);
+          if (dataUrlMatch) {
+            url = dataUrlMatch[1];
+            descriptor = dataUrlMatch[2] ? trim(dataUrlMatch[2]) : '';
+            remaining = remaining.substring(dataUrlMatch[0].length);
+          } else {
+            // Fallback: treat entire remaining as one entry
+            url = remaining;
+            remaining = '';
+          }
+        } else {
+          // For regular URLs, split on comma
+          var commaIndex = remaining.indexOf(',');
+          var entry;
+          if (commaIndex === -1) {
+            entry = remaining;
+            remaining = '';
+          } else {
+            entry = remaining.substring(0, commaIndex);
+            remaining = remaining.substring(commaIndex + 1);
+          }
+          
+          entry = trim(entry);
+          if (!entry) continue;
+          
+          // Split entry into URL and descriptor
+          // URL is everything up to the last whitespace-separated token that looks like a descriptor
+          // Descriptors are: <number>w, <number>x, or just <number>
+          var parts = entry.split(/\s+/);
+          if (parts.length === 1) {
+            url = parts[0];
+            descriptor = '';
+          } else {
+            // Check if last part is a descriptor (ends with w, x, or is a number)
+            var lastPart = parts[parts.length - 1];
+            if (/^\d+(\.\d+)?[wx]?$/.test(lastPart)) {
+              // Last part is a descriptor
+              url = parts.slice(0, -1).join(' ');
+              descriptor = lastPart;
+            } else {
+              // No valid descriptor, treat entire thing as URL (and sanitize it!)
+              url = entry;
+              descriptor = '';
+            }
+          }
+        }
+        
+        // CRITICAL: Sanitize EVERY URL regardless of descriptor format
+        var sanitizedUrl = $sce.getTrustedMediaUrl(trim(url));
+        
+        if (descriptor) {
+          sanitizedEntries.push(sanitizedUrl + ' ' + descriptor);
+        } else {
+          sanitizedEntries.push(sanitizedUrl);
+        }
       }
 
-      // split the last item into uri and descriptor
-      var lastTuple = trim(rawUris[i * 2]).split(/\s/);
-
-      // sanitize the last uri
-      result += $sce.getTrustedMediaUrl(trim(lastTuple[0]));
-
-      // and add the last descriptor if any
-      if (lastTuple.length === 2) {
-        result += (' ' + trim(lastTuple[1]));
-      }
+      result = sanitizedEntries.join(', ');
       return result;
     }
 
