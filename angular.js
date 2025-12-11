@@ -9438,16 +9438,50 @@ function $CompileProvider($provide, $$sanitizeUriProvider) {
         var url, descriptor = '';
         
         // Check if this is a data: URL (which may contain commas)
-        if (/^data:/i.test(remaining)) {
-          // For data: URLs, find the end by looking for comma followed by space and another URL or descriptor
-          // Data URLs end at: ", http" or ", /" or ", data:" or at comma followed by space+descriptor pattern
-          var dataUrlMatch = remaining.match(/^(data:[^,]*,[^\s]*?)(\s+[^\s,]+)?\s*(?:,\s*|$)/i);
-          if (dataUrlMatch) {
-            url = dataUrlMatch[1];
-            descriptor = dataUrlMatch[2] ? trim(dataUrlMatch[2]) : '';
-            remaining = remaining.substring(dataUrlMatch[0].length);
+        // CVE-2024-21490 FIX: Use simple string operations instead of complex regex to avoid ReDoS
+        if (remaining.toLowerCase().indexOf('data:') === 0) {
+          // For data: URLs, find where the URL ends
+          // Data URLs format: data:[<mediatype>][;base64],<data>
+          // Find the comma that separates entries (after the data URL's own comma)
+          var dataCommaIndex = remaining.indexOf(',');
+          if (dataCommaIndex !== -1) {
+            // Look for the next comma after the data URL content
+            // The data URL content ends at whitespace (descriptor) or comma (next entry)
+            var afterDataComma = dataCommaIndex + 1;
+            var endIndex = remaining.length;
+            
+            // Find where this data URL entry ends (at whitespace or next entry comma)
+            for (var j = afterDataComma; j < remaining.length; j++) {
+              var ch = remaining.charAt(j);
+              if (ch === ' ' || ch === '\t') {
+                // Found whitespace - could be start of descriptor
+                // Find end of descriptor (next comma or end)
+                var descriptorStart = j;
+                while (j < remaining.length && remaining.charAt(j) !== ',') j++;
+                endIndex = j;
+                break;
+              } else if (ch === ',') {
+                // Found comma - this is the separator to next entry
+                endIndex = j;
+                break;
+              }
+            }
+            
+            var dataEntry = remaining.substring(0, endIndex);
+            remaining = remaining.substring(endIndex);
+            if (remaining.charAt(0) === ',') remaining = remaining.substring(1);
+            
+            // Split data entry into URL and descriptor
+            var dataSpaceIndex = dataEntry.indexOf(' ', afterDataComma);
+            if (dataSpaceIndex !== -1) {
+              url = trim(dataEntry.substring(0, dataSpaceIndex));
+              descriptor = trim(dataEntry.substring(dataSpaceIndex));
+            } else {
+              url = trim(dataEntry);
+              descriptor = '';
+            }
           } else {
-            // Fallback: treat entire remaining as one entry
+            // No comma found - malformed data URL, treat as-is
             url = remaining;
             remaining = '';
           }
