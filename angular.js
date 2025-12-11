@@ -1138,7 +1138,15 @@ function copy(source, destination, maxDepth) {
         return new source.constructor(source.valueOf());
 
       case '[object RegExp]':
-        var re = new RegExp(source.source, source.toString().match(/[^/]*$/)[0]);
+        // CVE-2023-26116 FIX: Use flags property directly instead of parsing toString()
+        // The old regex-based extraction could cause ReDoS with malicious input
+        var flags = source.flags !== undefined ? source.flags :
+          (source.global ? 'g' : '') +
+          (source.ignoreCase ? 'i' : '') +
+          (source.multiline ? 'm' : '') +
+          (source.unicode ? 'u' : '') +
+          (source.sticky ? 'y' : '');
+        var re = new RegExp(source.source, flags);
         re.lastIndex = source.lastIndex;
         return re;
 
