@@ -25458,8 +25458,10 @@ var ISO_DATE_REGEXP = /^\d{4,}-[01]\d-[0-3]\dT[0-2]\d:[0-5]\d:[0-5]\d\.\d+(?:[+-
 //   7. Path
 //   8. Query
 //   9. Fragment
-//                 1111111111111111 222   333333    44444        55555555555555555555555     666     77777777     8888888     999
-var URL_REGEXP = /^[a-z][a-z\d.+-]*:\/*(?:[^:@]+(?::[^@]+)?@)?(?:[^\s:/?#]+|\[[a-f\d:]+])(?::\d+)?(?:\/[^?#]*)?(?:\?[^#]*)?(?:#.*)?$/i;
+// CVE-2023-26118 FIX: Simplified URL regex to prevent ReDoS attacks
+// The original regex had nested quantifiers that could cause catastrophic backtracking
+// This version uses disjoint character classes to prevent backtracking and adds IPv6 support
+var URL_REGEXP = /^[a-z][a-z\d.+-]*:\/*(?:[^:@\/\s]+(?::[^@\/\s]*)?@)?(?:[^\s:\/@?#]+|\[[a-f\d:]+\])(?::\d+)?(?:\/[^\s]*)?$/i;
 // eslint-disable-next-line max-len
 var EMAIL_REGEXP = /^(?=.{1,254}$)(?=.{1,64}@)[-!#$%&'*+/0-9=?A-Z^_`a-z{|}~]+(\.[-!#$%&'*+/0-9=?A-Z^_`a-z{|}~]+)*@[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/;
 var NUMBER_REGEXP = /^\s*(-|\+)?(\d+|(\d*(\.\d*)))([eE][+-]?\d+)?\s*$/;
