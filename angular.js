@@ -9638,8 +9638,9 @@ function $CompileProvider($provide, $$sanitizeUriProvider) {
 
         nodeName = nodeName_(this.$$element);
 
-        // Sanitize img[srcset] values.
-        if (nodeName === 'img' && key === 'srcset') {
+        // CVE-2024-8373 FIX: Sanitize img[srcset] AND source[srcset] values.
+        // Previously only img was checked, allowing source elements to bypass sanitization.
+        if ((nodeName === 'img' || nodeName === 'source') && key === 'srcset') {
           this[key] = value = sanitizeSrcset(value, '$set(\'srcset\', value)');
         }
 
